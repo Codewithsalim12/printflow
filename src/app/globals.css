@@ -1,0 +1,110 @@
+@import "tailwindcss";
+
+:root {
+  --ink: #111114;
+  --muted: #6b7280;
+  --yellow: #ffd22e;
+  --pink: #ff2e63;
+  --orange: #ff6b35;
+  --orange-dark: #ea580c;
+  --violet: #7c3aed;
+  --paper: #fffdf8;
+  --tint: #fff9ec;
+  --line: #ece3d2;
+  --card: #ffffff;
+  --dark: #17171b;
+  --slate: #54595f;
+  --bg: #fffdf8;
+  --soft: #fff9ec;
+  --green: #16a34a;
+  --red: #ff2e63;
+  --radius: 16px;
+  --shadow: 0 10px 30px rgba(17, 17, 20, 0.08);
+  --shadow-lg: 0 20px 60px rgba(17, 17, 20, 0.15);
+  --shadow-pink: 0 14px 34px rgba(255, 46, 99, 0.28);
+  --font: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, Roboto, 'Segoe UI', Arial, sans-serif;
+}
+
+body {
+  font-family: var(--font);
+  color: var(--ink);
+  background-color: var(--paper);
+  background-image:
+    radial-gradient(560px 380px at 88% -60px, rgba(255,210,46,0.16), transparent 65%),
+    radial-gradient(620px 420px at -80px 42%, rgba(255,46,99,0.07), transparent 65%),
+    radial-gradient(rgba(17,17,20,0.045) 1px, transparent 1.4px);
+  background-size: auto, auto, 26px 26px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Animations */
+@keyframes laserSweep {
+  0% { top: 15%; opacity: 0.35; }
+  50% { opacity: 1; }
+  100% { top: 85%; opacity: 0.35; }
+}
+
+@keyframes floatBadge {
+  0% { transform: translateY(0px); }
+  100% { transform: translateY(-7px); }
+}
+
+@keyframes blinkLed {
+  0% { opacity: 0.4; }
+  100% { opacity: 1; }
+}
+
+@keyframes paperSlide {
+  0% { transform: translateY(0px); }
+  100% { transform: translateY(5px); }
+}
+
+@keyframes bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+@keyframes slide {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.anim-laser {
+  animation: laserSweep 2.2s ease-in-out infinite alternate;
+}
+
+.anim-float {
+  animation: floatBadge 3s ease-in-out infinite alternate;
+}
+
+.anim-led {
+  animation: blinkLed 0.9s infinite alternate;
+}
+
+.anim-paper {
+  animation: paperSlide 3s ease-in-out infinite alternate;
+}
+
+.anim-bob {
+  animation: bob 1.4s infinite ease-in-out;
+}
+
+.anim-slide {
+  background: linear-gradient(90deg, #e2e8f0, #ff6b35, #e2e8f0);
+  background-size: 200% 100%;
+  animation: slide 1.5s infinite linear;
+}
+
+/* Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 9999px;
+}

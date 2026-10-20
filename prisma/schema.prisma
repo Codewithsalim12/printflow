@@ -1,0 +1,150 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Shop {
+  id           String        @id @default(cuid())
+  slug         String        @unique
+  name         String
+  ownerName    String?
+  email        String?
+  phone        String?
+  address      String?
+  status       String        @default("ACTIVE") // ACTIVE, SUSPENDED, TRIAL
+  plan         String        @default("FREE_TRIAL") // FREE_TRIAL, BASIC, STANDARD, PRO, LIFETIME
+  apiToken     String        @unique @default(cuid()) // Secret agent pairing token
+  counterCode  String?       @default("1234") // Optional 4-digit counter verification code
+  qrCodeUrl    String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  users         User[]
+  printers      Printer[]
+  pricingRules  PricingRule[]
+  printJobs     PrintJob[]
+  subscriptions Subscription[]
+}
+
+model User {
+  id           String   @id @default(cuid())
+  shopId       String
+  shop         Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  name         String
+  email        String   @unique
+  phone        String?
+  passwordHash String
+  role         String   @default("OWNER") // OWNER, OPERATOR
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Printer {
+  id             String    @id @default(cuid())
+  shopId         String
+  shop           Shop      @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  name           String    // e.g. "HP LaserJet 1020 Plus"
+  systemName     String?   // Exact Windows Spooler name
+  type           String    @default("LASER") // LASER, INKTANK, THERMAL
+  isColor        Boolean   @default(false)
+  supportsDuplex Boolean   @default(false)
+  paperSizes     String[]  @default(["A4", "Legal"])
+  isDefaultBw    Boolean   @default(true)
+  isDefaultColor Boolean   @default(false)
+  status         String    @default("ONLINE") // ONLINE, OFFLINE, ERROR, PAPER_OUT
+  lastSeenAt     DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  printJobs PrintJob[]
+}
+
+model PricingRule {
+  id           String   @id @default(cuid())
+  shopId       String
+  shop         Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  paperSize    String   @default("A4") // A4, Legal, A3, 4x6
+  isColor      Boolean  @default(false)
+  isDuplex     Boolean  @default(false)
+  perPagePrice Float    @default(2.0) // In INR (₹)
+  minimumOrder Float    @default(2.0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([shopId, paperSize, isColor, isDuplex])
+}
+
+model PrintJob {
+  id                String    @id @default(cuid())
+  shopId            String
+  shop              Shop      @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  printerId         String?
+  printer           Printer?  @relation(fields: [printerId], references: [id])
+  customerPhone     String?
+  customerName      String?
+  originalFileName  String
+  fileKey           String    // Storage path / UUID in S3/R2 or local uploads
+  fileUrl           String?
+  fileType          String    // application/pdf, image/jpeg, image/png
+  fileSizeBytes     Int
+  totalPages        Int       @default(1)
+  pageRange         String?   @default("all")
+  copies            Int       @default(1)
+  paperSize         String    @default("A4")
+  isColor           Boolean   @default(false)
+  isDuplex          Boolean   @default(false)
+  orientation       String    @default("PORTRAIT") // PORTRAIT, LANDSCAPE
+  isEncrypted       Boolean   @default(false)
+  pdfPassword       String?   // For password-locked PDFs (Aadhaar, bank statements)
+  totalAmount       Float     @default(2.0)
+  paymentMethod     String    @default("PAY_AT_COUNTER") // UPI, CARD, PAY_AT_COUNTER
+  paymentStatus     String    @default("PENDING") // PENDING, PAID, FAILED, REFUNDED
+  printStatus       String    @default("UPLOADED") // UPLOADED, AWAITING_PAYMENT, QUEUED, PRINTING, PRINTED, FAILED, CANCELLED
+  failureReason     String?
+  retryCount        Int       @default(0)
+  printedAt         DateTime?
+  fileDeletedAt     DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  payments Payment[]
+  jobLogs  JobLog[]
+}
+
+model Payment {
+  id               String   @id @default(cuid())
+  jobId            String
+  job              PrintJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  gateway          String   @default("RAZORPAY") // RAZORPAY, CASHFREE, CASH_COUNTER
+  gatewayOrderId   String?
+  gatewayPaymentId String?
+  amount           Float
+  status           String   @default("PENDING") // PENDING, SUCCESS, FAILED
+  webhookPayload   String?
+  createdAt        DateTime @default(now())
+}
+
+model JobLog {
+  id        String   @id @default(cuid())
+  jobId     String
+  job       PrintJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  event     String   // UPLOADED, PAYMENT_RECEIVED, AGENT_POLLED, PRINTING, COMPLETED, FAILED
+  message   String?
+  createdAt DateTime @default(now())
+}
+
+model Subscription {
+  id        String   @id @default(cuid())
+  shopId    String
+  shop      Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  plan      String   // BASIC, STANDARD, PRO, LIFETIME
+  startsAt  DateTime @default(now())
+  expiresAt DateTime
+  status    String   @default("ACTIVE") // ACTIVE, EXPIRED, CANCELLED
+  amount    Float
+  createdAt DateTime @default(now())
+}

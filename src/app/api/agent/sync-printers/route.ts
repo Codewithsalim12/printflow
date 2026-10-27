@@ -29,6 +29,9 @@ export async function POST(request: NextRequest) {
 
     console.log(`[Agent Sync] Received ${printers.length} detected Windows printers for shop ${shopId}`);
 
+    // Update in-memory store
+    JobStore.updateSyncedPrinters(shopId, printers);
+
     // Update in database if connected
     try {
       for (const p of printers) {

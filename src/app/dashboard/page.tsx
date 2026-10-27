@@ -45,10 +45,23 @@ export default function ShopkeeperDashboard() {
   const [approvingId, setApprovingId] = useState<string | null>(null);
   const [showStandee, setShowStandee] = useState(false);
   const [copiedToken, setCopiedToken] = useState(false);
+  const [printers, setPrinters] = useState<{ id: string; name: string; isColor: boolean; status: string }[]>([]);
 
   const shopSlug = "sharma-cyber-cafe";
   const agentToken = "agent_sharma_cyber_live_token_99x";
   const counterCode = "7890";
+
+  const fetchShopData = async () => {
+    try {
+      const res = await fetch(`/api/shops/${shopSlug}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.shop?.printers) {
+          setPrinters(data.shop.printers);
+        }
+      }
+    } catch {}
+  };
 
   const fetchJobs = async () => {
     try {
@@ -66,7 +79,11 @@ export default function ShopkeeperDashboard() {
 
   useEffect(() => {
     fetchJobs();
-    const interval = setInterval(fetchJobs, 2500);
+    fetchShopData();
+    const interval = setInterval(() => {
+      fetchJobs();
+      fetchShopData();
+    }, 3000);
     return () => clearInterval(interval);
   }, []);
 
@@ -147,15 +164,25 @@ export default function ShopkeeperDashboard() {
               <span>Connected Printers</span>
               <span className="w-2 h-2 rounded-full bg-[#10b981] animate-pulse" />
             </div>
-            <div className="space-y-1 text-[11px]">
-              <div className="flex justify-between items-center text-white font-medium">
-                <span>HP LaserJet 1020</span>
-                <span className="text-[10px] text-emerald-400 font-bold">B&W Default</span>
-              </div>
-              <div className="flex justify-between items-center text-white font-medium">
-                <span>Epson EcoTank L3210</span>
-                <span className="text-[10px] text-amber-400 font-bold">Color Default</span>
-              </div>
+            <div className="space-y-1.5 text-[11px]">
+              {printers.length === 0 ? (
+                <div className="text-slate-500 text-[10px] py-1">Connecting to print agent...</div>
+              ) : (
+                printers.slice(0, 4).map((p) => (
+                  <div key={p.id} className="flex justify-between items-center text-white font-medium">
+                    <span className="truncate max-w-[130px]" title={p.name}>
+                      {p.name}
+                    </span>
+                    <span
+                      className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
+                        p.isColor ? "bg-amber-950 text-amber-400" : "bg-emerald-950 text-emerald-400"
+                      }`}
+                    >
+                      {p.isColor ? "Colour" : "B&W"}
+                    </span>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         </div>
@@ -262,10 +289,12 @@ export default function ShopkeeperDashboard() {
               <span className="w-2 h-2 rounded-full bg-[#10b981] animate-pulse" />
             </div>
             <div className="text-base font-black text-[#111114] mt-3">
-              Ready &amp; Polling
+              {printers.length > 0 ? `${printers.length} Printers Online` : "Ready & Polling"}
             </div>
-            <div className="text-[11px] text-emerald-600 font-bold mt-0.5">
-              SumatraPDF CLI Spooler
+            <div className="text-[11px] text-emerald-600 font-bold mt-0.5 truncate">
+              {printers.length > 0
+                ? `${printers[0].name}${printers.length > 1 ? ` (+${printers.length - 1} more)` : ""}`
+                : "SumatraPDF CLI Spooler"}
             </div>
           </div>
         </div>

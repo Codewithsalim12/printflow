@@ -22,6 +22,24 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "No file uploaded" }, { status: 400 });
     }
 
+    // Security: Max 50MB limit
+    if (file.size > 50 * 1024 * 1024) {
+      return NextResponse.json(
+        { error: "File size exceeds 50MB limit. Please upload a smaller document." },
+        { status: 400 }
+      );
+    }
+
+    // Security: Validate document extensions
+    const fileExt = file.name.split(".").pop()?.toLowerCase();
+    const isDoc = file.type?.includes("pdf") || file.type?.includes("image") || ["pdf", "jpg", "jpeg", "png"].includes(fileExt || "");
+    if (!isDoc) {
+      return NextResponse.json(
+        { error: "Unsupported file format. Please upload a PDF or JPG/PNG image." },
+        { status: 400 }
+      );
+    }
+
     // Save uploaded file to storage (local or cloud)
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);

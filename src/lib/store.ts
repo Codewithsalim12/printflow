@@ -276,4 +276,19 @@ export class JobStore {
     // Return jobs that are ready for the Windows agent (paid or counter-approved and in QUEUED status)
     return all.filter((j) => j.printStatus === "QUEUED");
   }
+
+  static updateSyncedPrinters(
+    shopId: string,
+    printers: { name: string; isColor?: boolean; supportsDuplex?: boolean; paperSizes?: string[] }[]
+  ) {
+    if (shopId === "shop_sharma_001" || FALLBACK_SHARMA_SHOP.id === shopId) {
+      FALLBACK_SHARMA_SHOP.printers = printers.map((p, idx) => ({
+        id: `p_${idx + 1}`,
+        name: p.name,
+        isColor: p.isColor ?? /color|epson|deskjet|ink|l3150|l3210/i.test(p.name),
+        supportsDuplex: p.supportsDuplex ?? /duplex|brother|hp laserjet.*d/i.test(p.name),
+        status: "ONLINE",
+      }));
+    }
+  }
 }

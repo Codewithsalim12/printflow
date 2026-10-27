@@ -219,8 +219,15 @@ async function processJob(job) {
 
   try {
     // Step B: Download to secure local spool directory
-    console.log(`   ⏳ Downloading temporary file...`);
-    await downloadFile(job.fileUrl, localFilePath);
+    let downloadUrl = job.fileUrl;
+    if (!downloadUrl.startsWith("http")) {
+      downloadUrl = `${CONFIG.apiUrl}${downloadUrl.startsWith("/") ? "" : "/"}${downloadUrl}`;
+    } else if (downloadUrl.includes("localhost") && !CONFIG.apiUrl.includes("localhost")) {
+      downloadUrl = downloadUrl.replace(/^https?:\/\/[^/]+/, CONFIG.apiUrl);
+    }
+
+    console.log(`   ⏳ Downloading temporary file from ${downloadUrl}...`);
+    await downloadFile(downloadUrl, localFilePath);
     console.log(`   ✓ File cached temporarily at: ${localFilePath}`);
 
     // Step C: Choose correct printer route (Laser vs InkTank)

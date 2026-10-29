@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { JobStore } from "@/lib/store";
+import { JobStore, shouldUseMockDb } from "@/lib/store";
 import { prisma } from "@/lib/db";
 
 export async function POST(request: NextRequest) {
@@ -32,36 +32,38 @@ export async function POST(request: NextRequest) {
     // Update in-memory store
     JobStore.updateSyncedPrinters(shopId, printers);
 
-    // Update in database if connected
-    try {
-      for (const p of printers) {
-        const isColorGuess = /color|epson|deskjet|ink|l3150|l3210/i.test(p.name);
-        const supportsDuplexGuess = /duplex|brother|hp laserjet.*d/i.test(p.name);
+    // Update in database if connected and not in mock mode
+    if (!shouldUseMockDb()) {
+      try {
+        for (const p of printers) {
+          const isColorGuess = /color|epson|deskjet|ink|l3150|l3210/i.test(p.name);
+          const supportsDuplexGuess = /duplex|brother|hp laserjet.*d/i.test(p.name);
 
-        await prisma.printer.upsert({
-          where: { id: `printer_${p.name.replace(/\W+/g, "_")}` },
-          update: {
-            status: "ONLINE",
-            lastSeenAt: new Date(),
-            paperSizes: p.paperSizes || ["A4", "Legal"],
-          },
-          create: {
-            id: `printer_${p.name.replace(/\W+/g, "_")}`,
-            shopId,
-            name: p.name,
-            systemName: p.name,
-            isColor: isColorGuess,
-            supportsDuplex: supportsDuplexGuess,
-            paperSizes: p.paperSizes || ["A4", "Legal"],
-            isDefaultBw: !isColorGuess,
-            isDefaultColor: isColorGuess,
-            status: "ONLINE",
-            lastSeenAt: new Date(),
-          },
-        });
+          await prisma.printer.upsert({
+            where: { id: `printer_${p.name.replace(/\W+/g, "_")}` },
+            update: {
+              status: "ONLINE",
+              lastSeenAt: new Date(),
+              paperSizes: p.paperSizes || ["A4", "Legal"],
+            },
+            create: {
+              id: `printer_${p.name.replace(/\W+/g, "_")}`,
+              shopId,
+              name: p.name,
+              systemName: p.name,
+              isColor: isColorGuess,
+              supportsDuplex: supportsDuplexGuess,
+              paperSizes: p.paperSizes || ["A4", "Legal"],
+              isDefaultBw: !isColorGuess,
+              isDefaultColor: isColorGuess,
+              status: "ONLINE",
+              lastSeenAt: new Date(),
+            },
+          });
+        }
+      } catch {
+        // Memory fallback active in dev
       }
-    } catch {
-      // Memory fallback active in dev
     }
 
     return NextResponse.json({

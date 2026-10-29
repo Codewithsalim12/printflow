@@ -1,4 +1,4 @@
-// Store abstraction: uses Prisma database with memory fallback for development
+// Store abstraction: uses In-Memory Mock Store for development or Prisma when database is active
 import { prisma } from "@/lib/db";
 
 export interface DemoShopData {
@@ -27,6 +27,7 @@ export interface DemoShopData {
   }[];
 }
 
+// In-Memory Shop State (Can be updated dynamically by the Windows Agent)
 export const FALLBACK_SHARMA_SHOP: DemoShopData = {
   id: "shop_sharma_001",
   slug: "sharma-cyber-cafe",
@@ -40,14 +41,14 @@ export const FALLBACK_SHARMA_SHOP: DemoShopData = {
   printers: [
     {
       id: "p1",
-      name: "HP LaserJet 1020 Plus",
+      name: "Microsoft Print to PDF",
       isColor: false,
       supportsDuplex: false,
       status: "ONLINE",
     },
     {
       id: "p2",
-      name: "Epson EcoTank L3210",
+      name: "OneNote (Desktop)",
       isColor: true,
       supportsDuplex: false,
       status: "ONLINE",
@@ -64,7 +65,7 @@ export const FALLBACK_SHARMA_SHOP: DemoShopData = {
 };
 
 // Global in-memory job queue for instant dev testing without mandatory local postgres
-interface InMemoryJob {
+export interface InMemoryJob {
   id: string;
   shopId: string;
   originalFileName: string;
@@ -84,53 +85,64 @@ interface InMemoryJob {
   printStatus: string;
   customerPhone?: string;
   customerName?: string;
+  pdfPassword?: string;
   createdAt: string;
 }
 
 const memoryJobs = new Map<string, InMemoryJob>();
 
+// Auto-detect if we should run in pure mock mode (default for dev unless real remote DB is configured)
+export function shouldUseMockDb(): boolean {
+  if (process.env.ENABLE_MOCK_DB === "true") return true;
+  if (!process.env.DATABASE_URL) return true;
+  if (process.env.DATABASE_URL.includes("localhost:5432")) return true;
+  return false;
+}
+
 export class JobStore {
   static async getShop(slug: string): Promise<DemoShopData | null> {
-    try {
-      const dbShop = await prisma.shop.findUnique({
-        where: { slug },
-        include: { pricingRules: true, printers: true },
-      });
-      if (dbShop) {
-        return {
-          id: dbShop.id,
-          slug: dbShop.slug,
-          name: dbShop.name,
-          ownerName: dbShop.ownerName || "",
-          phone: dbShop.phone || "",
-          address: dbShop.address || "",
-          status: dbShop.status,
-          counterCode: dbShop.counterCode || "1234",
-          apiToken: dbShop.apiToken,
-          printers: dbShop.printers.map((p) => ({
-            id: p.id,
-            name: p.name,
-            isColor: p.isColor,
-            supportsDuplex: p.supportsDuplex,
-            status: p.status,
-          })),
-          pricingRules: dbShop.pricingRules.map((r) => ({
-            paperSize: r.paperSize,
-            isColor: r.isColor,
-            isDuplex: r.isDuplex,
-            perPagePrice: r.perPagePrice,
-            minimumOrder: r.minimumOrder,
-          })),
-        };
+    if (!shouldUseMockDb()) {
+      try {
+        const dbShop = await prisma.shop.findUnique({
+          where: { slug },
+          include: { pricingRules: true, printers: true },
+        });
+        if (dbShop) {
+          return {
+            id: dbShop.id,
+            slug: dbShop.slug,
+            name: dbShop.name,
+            ownerName: dbShop.ownerName || "",
+            phone: dbShop.phone || "",
+            address: dbShop.address || "",
+            status: dbShop.status,
+            counterCode: dbShop.counterCode || "1234",
+            apiToken: dbShop.apiToken,
+            printers: dbShop.printers.map((p) => ({
+              id: p.id,
+              name: p.name,
+              isColor: p.isColor,
+              supportsDuplex: p.supportsDuplex,
+              status: p.status,
+            })),
+            pricingRules: dbShop.pricingRules.map((r) => ({
+              paperSize: r.paperSize,
+              isColor: r.isColor,
+              isDuplex: r.isDuplex,
+              perPagePrice: r.perPagePrice,
+              minimumOrder: r.minimumOrder,
+            })),
+          };
+        }
+      } catch {
+        // Fall back gracefully to in-memory demo shop
       }
-    } catch {
-      // Database not reachable yet, fall back gracefully to seeded demo shop
     }
 
-    if (slug === "sharma-cyber-cafe") {
+    if (slug === "sharma-cyber-cafe" || slug === "sharma") {
       return FALLBACK_SHARMA_SHOP;
     }
-    return null;
+    return FALLBACK_SHARMA_SHOP;
   }
 
   static async createJob(jobData: Omit<InMemoryJob, "id" | "createdAt">): Promise<InMemoryJob> {
@@ -144,69 +156,75 @@ export class JobStore {
     // Store in memory
     memoryJobs.set(id, newJob);
 
-    // Try saving in Prisma if DB available
-    try {
-      await prisma.printJob.create({
-        data: {
-          id,
-          shopId: jobData.shopId,
-          originalFileName: jobData.originalFileName,
-          fileKey: jobData.fileKey,
-          fileUrl: jobData.fileUrl,
-          fileType: jobData.fileType,
-          fileSizeBytes: jobData.fileSizeBytes,
-          totalPages: jobData.totalPages,
-          pageRange: jobData.pageRange,
-          copies: jobData.copies,
-          paperSize: jobData.paperSize,
-          isColor: jobData.isColor,
-          isDuplex: jobData.isDuplex,
-          totalAmount: jobData.totalAmount,
-          paymentMethod: jobData.paymentMethod,
-          paymentStatus: jobData.paymentStatus,
-          printStatus: jobData.printStatus,
-          customerPhone: jobData.customerPhone,
-          customerName: jobData.customerName,
-        },
-      });
-    } catch {
-      // Memory fallback active
+    if (!shouldUseMockDb()) {
+      try {
+        await prisma.printJob.create({
+          data: {
+            id,
+            shopId: jobData.shopId,
+            originalFileName: jobData.originalFileName,
+            fileKey: jobData.fileKey,
+            fileUrl: jobData.fileUrl,
+            fileType: jobData.fileType,
+            fileSizeBytes: jobData.fileSizeBytes,
+            totalPages: jobData.totalPages,
+            pageRange: jobData.pageRange,
+            copies: jobData.copies,
+            paperSize: jobData.paperSize,
+            isColor: jobData.isColor,
+            isDuplex: jobData.isDuplex,
+            totalAmount: jobData.totalAmount,
+            paymentMethod: jobData.paymentMethod,
+            paymentStatus: jobData.paymentStatus,
+            printStatus: jobData.printStatus,
+            customerPhone: jobData.customerPhone,
+            customerName: jobData.customerName,
+          },
+        });
+      } catch {
+        // In-memory fallback
+      }
     }
 
     return newJob;
   }
 
   static async getJob(id: string): Promise<InMemoryJob | null> {
-    try {
-      const dbJob = await prisma.printJob.findUnique({ where: { id } });
-      if (dbJob) {
-        return {
-          id: dbJob.id,
-          shopId: dbJob.shopId,
-          originalFileName: dbJob.originalFileName,
-          fileKey: dbJob.fileKey,
-          fileUrl: dbJob.fileUrl || "",
-          fileType: dbJob.fileType,
-          fileSizeBytes: dbJob.fileSizeBytes,
-          totalPages: dbJob.totalPages,
-          pageRange: dbJob.pageRange || "all",
-          copies: dbJob.copies,
-          paperSize: dbJob.paperSize,
-          isColor: dbJob.isColor,
-          isDuplex: dbJob.isDuplex,
-          totalAmount: dbJob.totalAmount,
-          paymentMethod: dbJob.paymentMethod,
-          paymentStatus: dbJob.paymentStatus,
-          printStatus: dbJob.printStatus,
-          customerPhone: dbJob.customerPhone || undefined,
-          customerName: dbJob.customerName || undefined,
-          createdAt: dbJob.createdAt.toISOString(),
-        };
-      }
-    } catch {
-      // Fallback to memory
+    if (memoryJobs.has(id)) {
+      return memoryJobs.get(id)!;
     }
-    return memoryJobs.get(id) || null;
+
+    if (!shouldUseMockDb()) {
+      try {
+        const dbJob = await prisma.printJob.findUnique({ where: { id } });
+        if (dbJob) {
+          return {
+            id: dbJob.id,
+            shopId: dbJob.shopId,
+            originalFileName: dbJob.originalFileName,
+            fileKey: dbJob.fileKey,
+            fileUrl: dbJob.fileUrl || "",
+            fileType: dbJob.fileType,
+            fileSizeBytes: dbJob.fileSizeBytes,
+            totalPages: dbJob.totalPages,
+            pageRange: dbJob.pageRange || "all",
+            copies: dbJob.copies,
+            paperSize: dbJob.paperSize,
+            isColor: dbJob.isColor,
+            isDuplex: dbJob.isDuplex,
+            totalAmount: dbJob.totalAmount,
+            paymentMethod: dbJob.paymentMethod,
+            paymentStatus: dbJob.paymentStatus,
+            printStatus: dbJob.printStatus,
+            customerPhone: dbJob.customerPhone || undefined,
+            customerName: dbJob.customerName || undefined,
+            createdAt: dbJob.createdAt.toISOString(),
+          };
+        }
+      } catch {}
+    }
+
+    return null;
   }
 
   static async updateJobStatus(id: string, printStatus: string, paymentStatus?: string): Promise<InMemoryJob | null> {
@@ -217,53 +235,53 @@ export class JobStore {
       memoryJobs.set(id, job);
     }
 
-    try {
-      await prisma.printJob.update({
-        where: { id },
-        data: {
-          printStatus,
-          ...(paymentStatus ? { paymentStatus } : {}),
-        },
-      });
-    } catch {
-      // Memory fallback
+    if (!shouldUseMockDb()) {
+      try {
+        await prisma.printJob.update({
+          where: { id },
+          data: {
+            printStatus,
+            ...(paymentStatus ? { paymentStatus } : {}),
+          },
+        });
+      } catch {}
     }
 
     return job || null;
   }
 
   static async getAllJobsForShop(shopId: string): Promise<InMemoryJob[]> {
-    try {
-      const dbJobs = await prisma.printJob.findMany({
-        where: { shopId },
-        orderBy: { createdAt: "desc" },
-      });
-      if (dbJobs.length > 0) {
-        return dbJobs.map((j) => ({
-          id: j.id,
-          shopId: j.shopId,
-          originalFileName: j.originalFileName,
-          fileKey: j.fileKey,
-          fileUrl: j.fileUrl || "",
-          fileType: j.fileType,
-          fileSizeBytes: j.fileSizeBytes,
-          totalPages: j.totalPages,
-          pageRange: j.pageRange || "all",
-          copies: j.copies,
-          paperSize: j.paperSize,
-          isColor: j.isColor,
-          isDuplex: j.isDuplex,
-          totalAmount: j.totalAmount,
-          paymentMethod: j.paymentMethod,
-          paymentStatus: j.paymentStatus,
-          printStatus: j.printStatus,
-          customerPhone: j.customerPhone || undefined,
-          customerName: j.customerName || undefined,
-          createdAt: j.createdAt.toISOString(),
-        }));
-      }
-    } catch {
-      // Fallback to memory
+    if (!shouldUseMockDb()) {
+      try {
+        const dbJobs = await prisma.printJob.findMany({
+          where: { shopId },
+          orderBy: { createdAt: "desc" },
+        });
+        if (dbJobs.length > 0) {
+          return dbJobs.map((j) => ({
+            id: j.id,
+            shopId: j.shopId,
+            originalFileName: j.originalFileName,
+            fileKey: j.fileKey,
+            fileUrl: j.fileUrl || "",
+            fileType: j.fileType,
+            fileSizeBytes: j.fileSizeBytes,
+            totalPages: j.totalPages,
+            pageRange: j.pageRange || "all",
+            copies: j.copies,
+            paperSize: j.paperSize,
+            isColor: j.isColor,
+            isDuplex: j.isDuplex,
+            totalAmount: j.totalAmount,
+            paymentMethod: j.paymentMethod,
+            paymentStatus: j.paymentStatus,
+            printStatus: j.printStatus,
+            customerPhone: j.customerPhone || undefined,
+            customerName: j.customerName || undefined,
+            createdAt: j.createdAt.toISOString(),
+          }));
+        }
+      } catch {}
     }
 
     return Array.from(memoryJobs.values())
@@ -273,7 +291,7 @@ export class JobStore {
 
   static async getPendingAgentJobs(shopId: string): Promise<InMemoryJob[]> {
     const all = await this.getAllJobsForShop(shopId);
-    // Return jobs that are ready for the Windows agent (paid or counter-approved and in QUEUED status)
+    // Return jobs in QUEUED status ready for the Windows agent
     return all.filter((j) => j.printStatus === "QUEUED");
   }
 
@@ -281,14 +299,12 @@ export class JobStore {
     shopId: string,
     printers: { name: string; isColor?: boolean; supportsDuplex?: boolean; paperSizes?: string[] }[]
   ) {
-    if (shopId === "shop_sharma_001" || FALLBACK_SHARMA_SHOP.id === shopId) {
-      FALLBACK_SHARMA_SHOP.printers = printers.map((p, idx) => ({
-        id: `p_${idx + 1}`,
-        name: p.name,
-        isColor: p.isColor ?? /color|epson|deskjet|ink|l3150|l3210/i.test(p.name),
-        supportsDuplex: p.supportsDuplex ?? /duplex|brother|hp laserjet.*d/i.test(p.name),
-        status: "ONLINE",
-      }));
-    }
+    FALLBACK_SHARMA_SHOP.printers = printers.map((p, idx) => ({
+      id: `p_${idx + 1}`,
+      name: p.name,
+      isColor: p.isColor ?? /color|epson|deskjet|ink|l3150|l3210/i.test(p.name),
+      supportsDuplex: p.supportsDuplex ?? /duplex|brother|hp laserjet.*d/i.test(p.name),
+      status: "ONLINE",
+    }));
   }
 }

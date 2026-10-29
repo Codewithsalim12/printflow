@@ -10,17 +10,23 @@ import http from "http";
 import https from "https";
 import { execFile, exec } from "child_process";
 import { fileURLToPath } from "url";
-import printerPkg from "pdf-to-printer";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const printerModule = printerPkg.default || printerPkg;
+// Load local config.json if present (generated automatically for shopkeeper)
+let localConfig = {};
+const configPath = path.resolve(__dirname, "./config.json");
+if (fs.existsSync(configPath)) {
+  try {
+    localConfig = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+  } catch {}
+}
 
 const CONFIG = {
-  apiUrl: process.env.PRINTFLOW_API_URL || "http://localhost:3000",
-  agentToken: process.env.PRINTFLOW_AGENT_TOKEN || "agent_sharma_cyber_live_token_99x",
-  shopId: process.env.PRINTFLOW_SHOP_ID || "shop_sharma_001",
+  apiUrl: process.env.PRINTFLOW_API_URL || localConfig.apiUrl || "http://localhost:3000",
+  agentToken: process.env.PRINTFLOW_AGENT_TOKEN || localConfig.agentToken || "agent_sharma_cyber_live_token_99x",
+  shopId: process.env.PRINTFLOW_SHOP_ID || localConfig.shopId || "shop_sharma_001",
   pollIntervalMs: 2500,
   tempDir: path.resolve(__dirname, "./temp_print_spool"),
   sumatraBin: path.resolve(__dirname, "./bin/SumatraPDF.exe"),
@@ -50,11 +56,51 @@ console.log(`🔑 Shop Agent Token:          ${CONFIG.agentToken}`);
 console.log(`📁 Local Spool Directory:     ${CONFIG.tempDir}`);
 console.log("====================================================\n");
 
+// Native Windows Printer Discovery (Bypasses buggy regex in pdf-to-printer)
+async function getNativeWindowsPrinters() {
+  return new Promise((resolve) => {
+    exec(
+      'powershell -NoProfile -Command "Get-Printer | Select-Object Name, PortName, PrinterStatus | ConvertTo-Json -Compress"',
+      (err, stdout) => {
+        if (err || !stdout || !stdout.trim()) {
+          return resolve([]);
+        }
+        try {
+          const parsed = JSON.parse(stdout.trim());
+          const list = Array.isArray(parsed) ? parsed : [parsed];
+          const results = list
+            .filter((p) => p && p.Name)
+            .map((p) => ({
+              name: p.Name,
+              port: p.PortName,
+              status: p.PrinterStatus === 0 ? "Normal" : String(p.PrinterStatus),
+              paperSizes: ["A4", "Legal", "Letter"],
+            }));
+          resolve(results);
+        } catch {
+          resolve([]);
+        }
+      }
+    );
+  });
+}
+
+async function getNativeDefaultPrinter() {
+  return new Promise((resolve) => {
+    exec(
+      'powershell -NoProfile -Command "(Get-CimInstance Win32_Printer -Filter \\"Default=True\\").Name"',
+      (err, stdout) => {
+        resolve(stdout ? stdout.trim() : null);
+      }
+    );
+  });
+}
+
 // 1. Hardware Discovery: Query Windows Printers
 async function discoverAndSyncPrinters() {
   try {
     console.log("🔍 Detecting physical printers installed on this Windows PC...");
-    detectedPrinters = await printerModule.getPrinters();
+    detectedPrinters = await getNativeWindowsPrinters();
 
     if (!detectedPrinters || detectedPrinters.length === 0) {
       console.warn("⚠️ No printers found on this system.");
@@ -63,19 +109,20 @@ async function discoverAndSyncPrinters() {
 
     console.log(`✅ Found ${detectedPrinters.length} installed printers:`);
     detectedPrinters.forEach((p, idx) => {
-      console.log(`   ${idx + 1}. [${p.name}] (Paper: ${p.paperSizes?.join(", ") || "A4"})`);
+      console.log(`   ${idx + 1}. [${p.name}] (Port: ${p.port || "USB"})`);
     });
 
     // Auto-identify best candidates for B&W laser and Color InkTank
-    const defaultSysPrinter = await printerModule.getDefaultPrinter().catch(() => null);
+    const defaultSysPrinter = await getNativeDefaultPrinter();
 
+    // Prioritize Brother or physical hardware over PDF drivers
     defaultBwPrinter =
-      detectedPrinters.find((p) => /hp|brother|laser|canon/i.test(p.name))?.name ||
-      defaultSysPrinter?.name ||
+      detectedPrinters.find((p) => /brother|dcp|hp|laser|canon/i.test(p.name))?.name ||
+      defaultSysPrinter ||
       detectedPrinters[0].name;
 
     defaultColorPrinter =
-      detectedPrinters.find((p) => /epson|color|ink|deskjet|l3150|l3210/i.test(p.name))?.name ||
+      detectedPrinters.find((p) => /brother|dcp|epson|color|ink|deskjet/i.test(p.name))?.name ||
       defaultBwPrinter;
 
     console.log(`\n📌 Auto-Assigned Printer Routes:`);
@@ -173,7 +220,13 @@ function printSilentlyWithSumatra(pdfPath, printerName, options = {}) {
 
     const printSettings = settingsParts.join(",");
 
-    const args = ["-print-to", printerName, "-silent"];
+    const args = [];
+    if (printerName && printerName !== "null" && printerName !== "undefined") {
+      args.push("-print-to", printerName);
+    } else {
+      args.push("-print-to-default");
+    }
+    args.push("-silent");
 
     if (printSettings) {
       args.push("-print-settings", printSettings);
@@ -231,11 +284,18 @@ async function processJob(job) {
     console.log(`   ✓ File cached temporarily at: ${localFilePath}`);
 
     // Step C: Choose correct printer route (Laser vs InkTank)
-    const targetPrinter = job.isColor
+    let targetPrinter = job.isColor
       ? defaultColorPrinter || defaultBwPrinter
       : defaultBwPrinter || defaultColorPrinter;
 
-    console.log(`   🎯 Selected Hardware Route: [${targetPrinter}]`);
+    if (!targetPrinter || targetPrinter === "null") {
+      const livePrinters = await printerModule.getPrinters().catch(() => []);
+      const brother = livePrinters.find((p) => /brother|dcp/i.test(p.name));
+      const sysDefault = await printerModule.getDefaultPrinter().catch(() => null);
+      targetPrinter = brother?.name || sysDefault?.name || livePrinters[0]?.name || null;
+    }
+
+    console.log(`   🎯 Selected Hardware Route: [${targetPrinter || "System Default"}]`);
 
     // Step D: Send silent print job to physical Windows Spooler
     await printSilentlyWithSumatra(localFilePath, targetPrinter, {
@@ -292,7 +352,10 @@ async function pollQueue() {
 // Bootstrap Agent
 async function startAgent() {
   await discoverAndSyncPrinters();
+  // Poll print queue frequently
   setInterval(pollQueue, CONFIG.pollIntervalMs);
+  // Auto-refresh printers every 20s to detect newly plugged USB cables
+  setInterval(discoverAndSyncPrinters, 20000);
   pollQueue();
   console.log("👀 Agent is now actively listening for paid customer print jobs...\n");
 }

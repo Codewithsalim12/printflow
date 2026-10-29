@@ -17,7 +17,9 @@ import {
   Copy,
   Check,
   Sparkles,
-  ChevronRight
+  ChevronRight,
+  Smartphone,
+  QrCode
 } from "lucide-react";
 
 interface ShopInfo {
@@ -162,6 +164,27 @@ function CustomerPrintPortalContent({
     return () => clearInterval(interval);
   }, [submittedJob?.id]);
 
+  const [verifyingUpi, setVerifyingUpi] = useState(false);
+
+  const handleConfirmUpiPayment = async () => {
+    if (!submittedJob?.id) return;
+    setVerifyingUpi(true);
+    try {
+      const res = await fetch(`/api/jobs/${submittedJob.id}/pay-upi`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ utr: "UPI" + Date.now().toString().slice(-8) }),
+      });
+      if (res.ok) {
+        setLiveStatus("QUEUED");
+      }
+    } catch (err) {
+      console.error("UPI verification error:", err);
+    } finally {
+      setVerifyingUpi(false);
+    }
+  };
+
   const copyToken = () => {
     if (!submittedJob?.id) return;
     navigator.clipboard.writeText(submittedJob.id);
@@ -237,32 +260,102 @@ function CustomerPrintPortalContent({
           {submittedJob ? (
             /* Live Print Status & Success Screen */
             <div className="text-center py-4 space-y-5">
-              <div className="w-16 h-16 rounded-full bg-[#ecfdf5] border-2 border-[#10b981] flex items-center justify-center mx-auto text-[#10b981]">
-                <CheckCircle2 className="w-9 h-9" />
-              </div>
+              {submittedJob.paymentMethod === "UPI" && liveStatus === "AWAITING_PAYMENT" ? (
+                /* 1. DYNAMIC UPI PAYMENT CARD */
+                <div className="bg-[#fff5f7] border-2 border-[#ff2e63] rounded-3xl p-5 text-center shadow-lg space-y-3.5">
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#ff2e63]/10 text-[#ff2e63] text-xs font-black">
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>INSTANT UPI PAYMENT</span>
+                  </div>
 
-              <div>
-                <div className="text-[11px] font-black uppercase tracking-wider text-slate-400">
-                  Aapka Print Token Code
+                  <div>
+                    <div className="text-3xl font-black text-[#111114]">
+                      ₹{submittedJob.totalAmount.toFixed(2)}
+                    </div>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      GPay, PhonePe, Paytm, ya kisi bhi UPI app se scan karein
+                    </p>
+                  </div>
+
+                  {/* Dynamic UPI QR Code */}
+                  <div className="p-3 bg-white rounded-2xl border border-[#ff2e63]/20 inline-block shadow-sm">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={`/api/qr/upi?pa=sharma.cyber@upi&pn=${encodeURIComponent(
+                        shop?.name || "Sharma Cyber Cafe"
+                      )}&am=${submittedJob.totalAmount.toFixed(2)}&tn=${submittedJob.id}`}
+                      alt="UPI QR"
+                      className="w-44 h-44 mx-auto object-contain"
+                    />
+                  </div>
+
+                  {/* Mobile 1-Tap Pay Direct Link */}
+                  <div className="space-y-2">
+                    <a
+                      href={`upi://pay?pa=sharma.cyber@upi&pn=${encodeURIComponent(
+                        shop?.name || "Sharma Cyber Cafe"
+                      )}&am=${submittedJob.totalAmount.toFixed(2)}&tn=${submittedJob.id}&cu=INR`}
+                      className="w-full py-3 rounded-2xl bg-gradient-to-r from-[#10b981] to-[#059669] hover:opacity-95 text-white font-black text-xs shadow-md transition flex items-center justify-center gap-2"
+                    >
+                      <Smartphone className="w-4 h-4" />
+                      <span>Pay ₹{submittedJob.totalAmount.toFixed(2)} with PhonePe / GPay</span>
+                    </a>
+
+                    <button
+                      type="button"
+                      onClick={handleConfirmUpiPayment}
+                      disabled={verifyingUpi}
+                      className="w-full py-2.5 rounded-xl bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-sm"
+                    >
+                      {verifyingUpi ? (
+                        <>
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin text-[#ff2e63]" />
+                          <span>Verifying Payment...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Check className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>I Have Paid / Auto-Verify &amp; Print</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  <p className="text-[11px] text-slate-400">
+                    Payment hote hi printer bina kisi click ke apne aap print karega.
+                  </p>
                 </div>
-                <div className="inline-flex items-center gap-2 mt-1 bg-slate-50 border border-slate-200 px-4 py-1.5 rounded-2xl">
-                  <span className="text-2xl font-black text-[#111114] tracking-tight">
-                    {submittedJob.id}
-                  </span>
-                  <button
-                    onClick={copyToken}
-                    className="p-1.5 rounded-lg hover:bg-slate-200 text-slate-600 transition"
-                    title="Copy Token"
-                  >
-                    {copiedToken ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
-                  </button>
-                </div>
-                <p className="text-xs text-slate-500 mt-2 px-2">
-                  {submittedJob.paymentMethod === "PAY_AT_COUNTER"
-                    ? "Ye Token Code counter par dikhayein aur printout le lein."
-                    : "Payment mil gaya hai! Aapka printout printer se nikal raha hai."}
-                </p>
-              </div>
+              ) : (
+                /* 2. SUCCESS BADGE & TOKEN CODE */
+                <>
+                  <div className="w-16 h-16 rounded-full bg-[#ecfdf5] border-2 border-[#10b981] flex items-center justify-center mx-auto text-[#10b981]">
+                    <CheckCircle2 className="w-9 h-9" />
+                  </div>
+
+                  <div>
+                    <div className="text-[11px] font-black uppercase tracking-wider text-slate-400">
+                      Aapka Print Token Code
+                    </div>
+                    <div className="inline-flex items-center gap-2 mt-1 bg-slate-50 border border-slate-200 px-4 py-1.5 rounded-2xl">
+                      <span className="text-2xl font-black text-[#111114] tracking-tight">
+                        {submittedJob.id}
+                      </span>
+                      <button
+                        onClick={copyToken}
+                        className="p-1.5 rounded-lg hover:bg-slate-200 text-slate-600 transition"
+                        title="Copy Token"
+                      >
+                        {copiedToken ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
+                      </button>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-2 px-2">
+                      {submittedJob.paymentMethod === "PAY_AT_COUNTER"
+                        ? "Ye Token Code counter par dikhayein aur printout le lein."
+                        : "Payment mil gaya hai! Aapka printout printer se nikal raha hai."}
+                    </p>
+                  </div>
+                </>
+              )}
 
               {/* Live Animated Printer Spooler Box */}
               <div className="bg-[#fff9ec] border border-[#f0e2ba] rounded-2xl p-4 text-left space-y-3">

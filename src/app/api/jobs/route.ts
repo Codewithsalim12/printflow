@@ -62,12 +62,10 @@ export async function POST(request: NextRequest) {
     const chargeableUnits = isDuplex ? Math.ceil(totalPages / 2) : totalPages;
     const calculatedAmount = Math.max(2.0, chargeableUnits * perPagePrice * copies);
 
-    // Determine initial status:
-    // If Pay at Counter -> AWAITING_PAYMENT (Shopkeeper must approve on counter screen)
-    // If UPI demo test -> auto-transition to PAID -> QUEUED for immediate printing demo
-    const isOnlinePayment = paymentMethod === "UPI";
-    const paymentStatus = isOnlinePayment ? "PAID" : "PENDING";
-    const printStatus = isOnlinePayment ? "QUEUED" : "AWAITING_PAYMENT";
+    // Initial status for all print jobs:
+    // PENDING payment until confirmed via UPI or approved at counter by shopkeeper
+    const paymentStatus = "PENDING";
+    const printStatus = "AWAITING_PAYMENT";
 
     const job = await JobStore.createJob({
       shopId: shop?.id || shopId,

@@ -289,10 +289,10 @@ async function processJob(job) {
       : defaultBwPrinter || defaultColorPrinter;
 
     if (!targetPrinter || targetPrinter === "null") {
-      const livePrinters = await printerModule.getPrinters().catch(() => []);
+      const livePrinters = await getNativeWindowsPrinters();
       const brother = livePrinters.find((p) => /brother|dcp/i.test(p.name));
-      const sysDefault = await printerModule.getDefaultPrinter().catch(() => null);
-      targetPrinter = brother?.name || sysDefault?.name || livePrinters[0]?.name || null;
+      const sysDefault = await getNativeDefaultPrinter();
+      targetPrinter = brother?.name || sysDefault || livePrinters[0]?.name || null;
     }
 
     console.log(`   🎯 Selected Hardware Route: [${targetPrinter || "System Default"}]`);

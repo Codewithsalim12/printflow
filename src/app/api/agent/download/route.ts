@@ -1,10 +1,27 @@
 import { NextRequest, NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
+import { execSync } from "child_process";
 
-export async function GET(request: NextRequest) {
+export async function GET(_request: NextRequest) {
   try {
-    const zipPath = path.resolve(process.cwd(), "public/downloads/printflow-agent.zip");
+    const downloadsDir = path.resolve(process.cwd(), "public/downloads");
+    const zipPath = path.resolve(downloadsDir, "printflow-agent.zip");
+
+    // Auto-generate if missing
+    if (!fs.existsSync(zipPath)) {
+      if (!fs.existsSync(downloadsDir)) {
+        fs.mkdirSync(downloadsDir, { recursive: true });
+      }
+      try {
+        execSync(
+          'powershell -NoProfile -Command "Compress-Archive -Path \'agent\\*\' -DestinationPath \'public\\downloads\\printflow-agent.zip\' -Force"',
+          { stdio: "ignore" }
+        );
+      } catch (err) {
+        console.error("Auto zip archive failed:", err);
+      }
+    }
 
     if (!fs.existsSync(zipPath)) {
       return NextResponse.json({ error: "Agent package not ready" }, { status: 404 });

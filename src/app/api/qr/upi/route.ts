@@ -9,8 +9,10 @@ export async function GET(request: NextRequest) {
     const am = searchParams.get("am") || "2.00";
     const tn = searchParams.get("tn") || "PrintFlow_Print";
 
-    // Standard NPCI UPI URI Scheme
-    const upiUri = `upi://pay?pa=${encodeURIComponent(pa)}&pn=${encodeURIComponent(pn)}&am=${encodeURIComponent(am)}&tn=${encodeURIComponent(tn)}&cu=INR`;
+    const cleanAm = parseFloat(am) > 0 ? parseFloat(am).toFixed(2) : "2.00";
+
+    // Standard NPCI UPI URI Scheme (@ in VPA must remain unescaped for GPay/PhonePe)
+    const upiUri = `upi://pay?pa=${pa}&pn=${encodeURIComponent(pn)}&am=${cleanAm}&tn=${encodeURIComponent(tn)}&cu=INR`;
 
     const svgString = await QRCode.toString(upiUri, {
       type: "svg",
